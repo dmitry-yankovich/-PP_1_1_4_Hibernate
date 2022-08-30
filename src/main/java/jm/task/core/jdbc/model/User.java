@@ -6,6 +6,9 @@ import javax.persistence.Table;
 
 @Table
 public class User {
+
+    //private static long idGen = 0;
+
     @Id
     private Long id;
 
@@ -26,6 +29,7 @@ public class User {
         this.name = name;
         this.lastName = lastName;
         this.age = age;
+        //this.id = idGen++;
     }
 
     public Long getId() {
@@ -58,5 +62,15 @@ public class User {
 
     public void setAge(Byte age) {
         this.age = age;
+    }
+
+    @Override
+    public String toString() {
+        return "User{" +
+                "id=" + id +
+                ", name='" + name + '\'' +
+                ", lastName='" + lastName + '\'' +
+                ", age=" + age +
+                '}';
     }
 }
