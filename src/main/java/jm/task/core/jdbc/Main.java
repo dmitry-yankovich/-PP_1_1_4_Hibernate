@@ -24,9 +24,18 @@ public class Main {
             listUser.add(new User("Mike", "Tyson", (byte) 23));
             listUser.add(new User("Nick", "Jagger", (byte) 35));
 
-            listUser.stream().peek(x -> userService.saveUser(x.getName(), x.getLastName(), x.getAge())).
-                    map((x) -> "User с именем – " + x.getName() + " добавлен в базу данных").
-                    forEachOrdered(System.out::println);
+            try {
+                connection.setAutoCommit(false);
+
+                listUser.stream().peek(x -> userService.saveUser(x.getName(), x.getLastName(), x.getAge())).
+                        map((x) -> "User с именем – " + x.getName() + " добавлен в базу данных").
+                        forEachOrdered(System.out::println);
+
+                connection.commit();
+            }
+            catch (SQLException e) {
+                connection.rollback();
+            }
 
             userService.getAllUsers().stream().forEachOrdered(System.out::println);
 
