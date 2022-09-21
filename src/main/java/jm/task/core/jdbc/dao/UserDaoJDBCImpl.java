@@ -1,5 +1,7 @@
 package jm.task.core.jdbc.dao;
 
+import jm.task.core.jdbc.exception.DaoException;
+import jm.task.core.jdbc.exception.UtilException;
 import jm.task.core.jdbc.model.User;
 import jm.task.core.jdbc.util.Util;
 
@@ -8,118 +10,154 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class UserDaoJDBCImpl implements UserDao {
+
+    private final Connection connection = Util.getConnection();
+    private static final String CREATE_USERS_TABLE_SQL ="CREATE TABLE IF NOT EXISTS users (\n" +
+            "  `id` BIGINT(8) NOT NULL AUTO_INCREMENT,\n" +
+            "  `name` VARCHAR(100) NULL,\n" +
+            "  `lastName` VARCHAR(150) NULL,\n" +
+            "  `age` INT NULL,\n" +
+            "  PRIMARY KEY (`id`),\n" +
+            "  UNIQUE INDEX `id_UNIQUE` (`id` ASC) VISIBLE)";
+    private static final String DROP_USERS_TABLE_SQL = "DROP TABLE IF EXISTS users";
+    private static final String INSERT_RECORD_SQL = "insert into users (name, lastName, age) values (?, ?, ?)";
+    private static final String CHECK_USER_BY_ID_SQL = "select 1 from users where id = ? limit 1";
+    private static final String DELETE_USER_BY_ID_SQL = "delete from users where id = ?";
+    private static final String GET_ALL_USERS_SQL = "SELECT * from users";
+    private static final String CLEAN_USERS_TABLE_SQL = "truncate table users;";
+
     public UserDaoJDBCImpl() {
 
     }
 
     public void createUsersTable() {
 
-        String sql = "CREATE TABLE IF NOT EXISTS users (\n" +
-                "  `id` BIGINT(8) NOT NULL AUTO_INCREMENT,\n" +
-                "  `name` VARCHAR(100) NULL,\n" +
-                "  `lastName` VARCHAR(150) NULL,\n" +
-                "  `age` INT NULL,\n" +
-                "  PRIMARY KEY (`id`),\n" +
-                "  UNIQUE INDEX `id_UNIQUE` (`id` ASC) VISIBLE);";
-
-        try {
-            Connection connection = Util.getConnection();
-            try(Statement statement = connection.createStatement()) {
-                statement.execute(sql);
-            }
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(CREATE_USERS_TABLE_SQL);
         } catch (SQLException e) {
-            throw new RuntimeException(e);
+            throw new DaoException(e);
         }
     }
 
     public void dropUsersTable() {
-        String sql = "DROP TABLE IF EXISTS users ;";
 
-        try {
-            try (Connection connection = Util.getConnection()) {
-                Statement statement = connection.createStatement();
-                statement.execute(sql);
-            }
+        try (Statement statement = connection.createStatement();) {
+            statement.execute(DROP_USERS_TABLE_SQL);
         } catch (SQLException e) {
-            throw new RuntimeException(e);
+            throw new DaoException(e);
         }
     }
 
     public void saveUser(String name, String lastName, byte age) {
-        String sql = "insert into users (name, lastName, age) values (?, ?, ?)";
+
+        try (PreparedStatement statement = connection.prepareStatement(INSERT_RECORD_SQL)) {
+            statement.setString(1, name);
+            statement.setString(2, lastName);
+            statement.setByte(3, age);
+            statement.executeUpdate();
+        } catch (SQLException e) {
+            throw new DaoException(e);
+        }
+    }
+
+    public void saveUserList(List <User> userList) {
 
         try {
-            Connection connection = Util.getConnection();
-            try (PreparedStatement statement = connection.prepareStatement(sql)) {
-                statement.setString(1, name);
-                statement.setString(2, lastName);
-                statement.setByte(3, age);
-                statement.executeUpdate();
+            connection.setAutoCommit(false);
+
+            try {
+                userList.stream().forEachOrdered(x -> saveUser(x.getName(), x.getLastName(), x.getAge()));
+            } catch (DaoException e) {
+                try {
+                    connection.rollback();
+                } catch (SQLException ex) {
+                    throw new UtilException(ex);
+                }
+                throw new DaoException(e);
             }
+
+            userList.stream().map((x) -> "User с именем – " + x.getName() + " добавлен в базу данных").
+                    forEachOrdered(System.out::println);
+
+            try {
+                connection.commit();
+            } catch (SQLException e) {
+                throw new UtilException(e);
+            }
+
         } catch (SQLException e) {
-            throw new RuntimeException(e);
+            throw new UtilException(e);
+
+        } finally {
+            try {
+                connection.setAutoCommit(true);
+            } catch (SQLException e) {
+                throw new UtilException(e);
+            }
         }
     }
 
     public void removeUserById(long id) {
-        String sqlCheck = "select 1 from users where id = ? limit 1";
-        String sqlDelete = "delete from users where id = ?";
 
         try {
-            Connection connection = Util.getConnection();
+            connection.setAutoCommit(false);
 
-            try (PreparedStatement statementCheck = connection.prepareStatement(sqlCheck)) {
+            try (PreparedStatement statementCheck = connection.prepareStatement(CHECK_USER_BY_ID_SQL)) {
                 statementCheck.setLong(1, id);
                 ResultSet rs = statementCheck.executeQuery();
                 if (!rs.next()) {
+                    connection.rollback();
                     return;
                 }
+            } catch (SQLException e) {
+                connection.rollback();
+                throw new DaoException(e);
             }
 
-            try (PreparedStatement statementDelete = connection.prepareStatement(sqlDelete)) {
+            try (PreparedStatement statementDelete = connection.prepareStatement(DELETE_USER_BY_ID_SQL)) {
                 statementDelete.setLong(1, id);
                 statementDelete.executeUpdate();
+            } catch (SQLException e) {
+                connection.rollback();
+                throw new DaoException(e);
             }
+
         } catch (SQLException e) {
-            throw new RuntimeException(e);
+            throw new UtilException(e);
+        } finally {
+            try {
+                connection.setAutoCommit(true);
+            } catch (SQLException e) {
+                throw new UtilException(e);
+            }
         }
     }
 
     public List<User> getAllUsers() {
 
-        List <User> listUsers = new ArrayList<>();
+        List<User> listUsers = new ArrayList<>();
 
-        String sql = "SELECT * from users;";
-
-        try {
-            Connection connection = Util.getConnection();
-            try (Statement statement = connection.createStatement()) {
-                User user;
-                try (ResultSet rs = statement.executeQuery(sql)) {
-                    while (rs.next()) {
-                        user = new User(rs.getString("name"), rs.getString("lastName"), rs.getByte("age"));
-                        user.setId(rs.getLong("id"));
-                        listUsers.add(user);
-                    }
+        try (Statement statement = connection.createStatement()) {
+            User user;
+            try (ResultSet rs = statement.executeQuery(GET_ALL_USERS_SQL)) {
+                while (rs.next()) {
+                    user = new User(rs.getString("name"), rs.getString("lastName"), rs.getByte("age"));
+                    user.setId(rs.getLong("id"));
+                    listUsers.add(user);
                 }
             }
         } catch (SQLException e) {
-            throw new RuntimeException(e);
+            throw new DaoException(e);
         }
         return listUsers;
     }
 
     public void cleanUsersTable() {
-        //String sql = "delete from users;";
-        String sql = "truncate table users;";
 
-        try {
-            Connection connection = Util.getConnection();
             try (Statement statement = connection.createStatement()) {
-                statement.execute(sql);
+                statement.execute(CLEAN_USERS_TABLE_SQL);
+            } catch (SQLException e) {
+                throw new DaoException(e);
             }
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
-        }
     }
 }
