@@ -30,6 +30,14 @@ public class UserDaoJDBCImpl implements UserDao {
 
     }
 
+    public void closeConnection() {
+        try {
+            connection.close();
+        } catch (SQLException e) {
+            throw new UtilException(e);
+        }
+    }
+
     public void createUsersTable() {
 
         try (Statement statement = connection.createStatement()) {
@@ -60,34 +68,32 @@ public class UserDaoJDBCImpl implements UserDao {
         }
     }
 
-    public void saveUserList(List <User> userList) {
+    public void saveUserList(List<User> userList) {
 
         try {
             connection.setAutoCommit(false);
 
-            try {
-                userList.stream().forEachOrdered(x -> saveUser(x.getName(), x.getLastName(), x.getAge()));
-            } catch (DaoException e) {
-                try {
-                    connection.rollback();
-                } catch (SQLException ex) {
-                    throw new UtilException(ex);
-                }
-                throw new DaoException(e);
-            }
+            userList.stream().forEachOrdered(x -> saveUser(x.getName(), x.getLastName(), x.getAge()));
 
             userList.stream().map((x) -> "User с именем – " + x.getName() + " добавлен в базу данных").
                     forEachOrdered(System.out::println);
 
+            connection.commit();
+
+        } catch (DaoException e) {
             try {
-                connection.commit();
-            } catch (SQLException e) {
-                throw new UtilException(e);
+                connection.rollback();
+            } catch (SQLException ex) {
+                throw new UtilException(ex);
             }
-
-        } catch (SQLException e) {
+            throw new DaoException(e);
+        } catch (SQLException | UtilException e) {
+            try {
+                connection.rollback();
+            } catch (SQLException ex) {
+                throw new UtilException(ex);
+            }
             throw new UtilException(e);
-
         } finally {
             try {
                 connection.setAutoCommit(true);
@@ -99,39 +105,39 @@ public class UserDaoJDBCImpl implements UserDao {
 
     public void removeUserById(long id) {
 
-        try {
-            connection.setAutoCommit(false);
+            try (PreparedStatement statementCheck = connection.prepareStatement(CHECK_USER_BY_ID_SQL);
+                 PreparedStatement statementDelete = connection.prepareStatement(DELETE_USER_BY_ID_SQL)) {
 
-            try (PreparedStatement statementCheck = connection.prepareStatement(CHECK_USER_BY_ID_SQL)) {
+                connection.setAutoCommit(false);
+
                 statementCheck.setLong(1, id);
                 ResultSet rs = statementCheck.executeQuery();
                 if (!rs.next()) {
                     connection.rollback();
                     return;
                 }
-            } catch (SQLException e) {
-                connection.rollback();
-                throw new DaoException(e);
-            }
 
-            try (PreparedStatement statementDelete = connection.prepareStatement(DELETE_USER_BY_ID_SQL)) {
                 statementDelete.setLong(1, id);
                 statementDelete.executeUpdate();
-            } catch (SQLException e) {
-                connection.rollback();
-                throw new DaoException(e);
-            }
 
-        } catch (SQLException e) {
-            throw new UtilException(e);
-        } finally {
-            try {
-                connection.setAutoCommit(true);
             } catch (SQLException e) {
-                throw new UtilException(e);
+                try {
+                    if (!connection.getAutoCommit()) {
+                        connection.rollback();
+                    }
+                } catch (SQLException ex) {
+                    throw new UtilException(ex);
+                }
+                throw new DaoException(e);
+            } finally {
+                try {
+                    connection.setAutoCommit(true);
+                } catch (SQLException e) {
+                    throw new UtilException(e);
+                }
             }
-        }
     }
+
 
     public List<User> getAllUsers() {
 
@@ -159,5 +165,10 @@ public class UserDaoJDBCImpl implements UserDao {
             } catch (SQLException e) {
                 throw new DaoException(e);
             }
+    }
+
+    @Override
+    public void close() throws Exception {
+        connection.close();
     }
 }

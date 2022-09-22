@@ -11,21 +11,24 @@ public class Main {
     public static void main(String[] args) {
         // реализуйте алгоритм здесь
 
-        UserService userService = new UserServiceImpl();
-        userService.createUsersTable();
+        try (UserService userService = new UserServiceImpl();) {
+            userService.createUsersTable();
 
-        List<User> listUser = new ArrayList<>();
-        listUser.add(new User("Tom", "Far", (byte) 19));
-        listUser.add(new User("Bill", "Geitz", (byte) 20));
-        listUser.add(new User("Mike", "Tyson", (byte) 23));
-        listUser.add(new User("Nick", "Jagger", (byte) 35));
+            List<User> listUser = new ArrayList<>();
+            listUser.add(new User("Tom", "Far", (byte) 19));
+            listUser.add(new User("Bill", "Geitz", (byte) 20));
+            listUser.add(new User("Mike", "Tyson", (byte) 23));
+            listUser.add(new User("Nick", "Jagger", (byte) 35));
 
-        userService.saveUserList(listUser);
+            userService.saveUserList(listUser);
 
-        userService.getAllUsers().stream().forEachOrdered(System.out::println);
+            userService.getAllUsers().stream().forEachOrdered(System.out::println);
 
-        userService.cleanUsersTable();
+            userService.cleanUsersTable();
 
-        userService.dropUsersTable();
+            userService.dropUsersTable();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 }
